@@ -30,8 +30,9 @@ class TelegramUserbot:
         # Initialize Gemini AI model (Existing)
         if self.config.GEMINI_API_KEY:
             genai.configure(api_key=self.config.GEMINI_API_KEY)
-            self.gemini_model = genai.GenerativeModel('gemini-pro')
-            print("✅ Gemini AI model initialized successfully.")
+            # CHANGED MODEL NAME from 'gemini-1.5-pro' to 'gemini-1.5-flash'
+            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash') 
+            print("✅ Gemini AI model initialized successfully with gemini-1.5-flash.")
         else:
             self.gemini_model = None
             print("⚠️ GEMINI_API_KEY not found. Gemini AI features disabled.")
@@ -194,7 +195,7 @@ class TelegramUserbot:
             if message.text and message.text.startswith('.') or (message.from_user and message.from_user.is_bot):
                 return
             
-            # Store original message for potential restoration on error
+            # Store original message for potential restoration
             msg_id = f"{message.chat.id}_{message.id}"
             self.original_messages[msg_id] = original_text
             
@@ -377,8 +378,9 @@ class TelegramUserbot:
             # Send startup message to Saved Messages
             try:
                 await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color\n• `.police` - Display police siren animation\n• `.ask <question>` - Ask Envo AI a general question\n• `.ask g <text/reply>` - Fix grammar of text/replied message\n• `.ask t <lang> <text/reply>` - Translate text/replied message to a language")
-            except:
-                pass
+            except Exception as e:
+                # Log any errors during startup message sending
+                print(f"Error sending startup message: {e}")
             
             # Keep running
             self.is_connected = True
