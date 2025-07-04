@@ -168,108 +168,111 @@ class TelegramUserbot:
     
     async def auto_quote_message(self, client: Client, message: Message):
         """Automatically quote a message when auto-quote mode is enabled.
-           If the message is a reply, it quotes the replied-to message's text.
-           Otherwise, it quotes the user's own message text.
-           The generated quote will always reply to the message whose content was quoted.
+           Deletes the user's original message.
+           If the message is a reply, the quote replies to the original message it was a reply to.
+           If the message is standalone, the quote is sent as a new, standalone message.
+           Always quotes the user's own message text.
+           If quoting fails, the original message is restored.
         """
+        original_text = message.text # Always quote the user's own message text
         
-        # 1. Determine the text to be quoted and the message to which the quote should reply.
-        text_to_quote = message.text # Default: quote the user's own message
-        target_reply_id = message.id # Default: quote replies to the user's own message
-
-        # Skip if message is a command or from another bot (userbot only processes own messages)
-        if message.text and message.text.startswith('.') or (message.from_user and message.from_user.is_bot):
-            return
-
-        # Check if the message is a reply to another message
-        if message.reply_to_message:
-            # If it's a reply, we want to quote the text of the message it's replying to.
-            # Ensure the replied-to message actually contains text.
-            if message.reply_to_message.text:
-                text_to_quote = message.reply_to_message.text
-                target_reply_id = message.reply_to_message.id # Quote will reply to the original message
-            else:
-                # If the replied-to message has no text (e.g., photo without caption, sticker),
-                # we cannot quote it meaningfully. Log and skip.
-                await self.log_error(f"Cannot quote replied-to message (ID: {message.reply_to_message.id}): it has no text content.", message)
-                return
-        
-        # IMPORTANT: Do NOT delete the user's original message (e.g., "Addis Ababa" in your example).
-        # We want it to remain visible, and the quote to appear as a reply to the relevant message.
-        # await message.delete() # Ensure this line is commented out or removed
-
         try:
-            # 2. Manage QuotLyBot color setting to ensure consistency.
+            # Skip if message is a command or from a bot
+            if message.text and message.text.startswith('.') or (message.from_user and message.from_user.is_bot):
+                return
+            
+            # Store original message for potential restoration on error
+            msg_id = f"{message.chat.id}_{message.id}"
+            self.original_messages[msg_id] = original_text
+            
+            # 1. Delete the original message (as requested, in all scenarios)
+            await message.delete()
+            
+            # 2. Determine target_reply_id based on whether the original message was a reply
+            target_reply_id = None
+            if message.reply_to_message:
+                target_reply_id = message.reply_to_message.id
+            
+            # 3. Manage QuotLyBot color setting to ensure consistency
             if self.current_color != self.quotly_bot_color:
                 if self.current_color != "default":
                     await client.send_message("@QuotLyBot", f"/qcolor {self.current_color}")
                     self.quotly_bot_color = self.current_color
-                    await asyncio.sleep(0.5)  # Brief pause to allow bot to process
+                    await asyncio.sleep(0.5)  # Brief pause
                 else:
-                    # Reset to default if user specified 'default'
                     await client.send_message("@QuotLyBot", "/qcolor default")
                     self.quotly_bot_color = "default"
                     await asyncio.sleep(0.5)
-
-            # 3. Send the determined text to QuotLyBot for quote generation.
-            quote_request = await client.send_message("@QuotLyBot", text_to_quote)
-
-            # 4. Wait for QuotLyBot's response (the generated quote).
+            
+            # 4. Send the original message's text to QuotLyBot for quote generation
+            quote_request = await client.send_message("@QuotLyBot", original_text)
+            
+            # 5. Wait for response from @QuotLyBot
             response = await self.wait_for_quotly_response(client)
-
+            
             if response:
-                # 5. Send QuotLyBot's response as a reply to the appropriate message.
+                # 6. Send the QuotLyBot response content.
+                # It will reply if target_reply_id is set, otherwise send standalone.
+                send_params = {
+                    "chat_id": message.chat.id,
+                }
+                if target_reply_id:
+                    send_params["reply_to_message_id"] = target_reply_id
+
                 if response.photo:
                     await client.send_photo(
-                        chat_id=message.chat.id,
                         photo=response.photo.file_id,
                         caption=response.caption if response.caption else None,
-                        reply_to_message_id=target_reply_id # Reply to the message whose content was quoted
+                        **send_params
                     )
                 elif response.text:
                     await client.send_message(
-                        chat_id=message.chat.id,
                         text=response.text,
-                        reply_to_message_id=target_reply_id # Reply to the message whose content was quoted
+                        **send_params
                     )
                 elif response.sticker:
-                    # If QuotLyBot sends a sticker, forward it as a reply.
                     await client.send_sticker(
-                        chat_id=message.chat.id,
                         sticker=response.sticker.file_id,
-                        reply_to_message_id=target_reply_id # Reply to the message whose content was quoted
+                        **send_params
                     )
                 else:
-                    # Generic fallback for other media types from QuotLyBot.
                     await client.copy_message(
-                        chat_id=message.chat.id,
                         from_chat_id="@QuotLyBot",
                         message_id=response.id,
-                        reply_to_message_id=target_reply_id # Reply to the message whose content was quoted
+                        **send_params
                     )
-
-                # 6. Clean up the messages sent to/from @QuotLyBot in its private chat.
+                
+                # 7. Clean up QuotLyBot chat messages
                 try:
                     await quote_request.delete()
                     await response.delete()
                 except Exception as e:
                     print(f"Warning: Could not clean up QuotLyBot chat messages: {e}")
-
-            else:
-                # If QuotLyBot doesn't respond, raise an error.
-                raise Exception("QuotLyBot did not respond. Please ensure you have started @QuotLyBot in its private chat.")
-
-        except Exception as e:
-            # 7. Handle any errors during the auto-quoting process.
-            # Log the error to Saved Messages.
-            await self.log_error(f"Auto-quote failed: {str(e)}", message)
+                    pass # Continue even if cleanup fails
+                
+                # Remove from cache since processing is complete
+                if msg_id in self.original_messages:
+                    del self.original_messages[msg_id]
             
-            # Inform the user in the chat about the failure, replying to their message.
-            await client.send_message(
-                chat_id=message.chat.id,
-                text=f"❌ Auto-quote failed for this interaction. Error: `{str(e)}`",
-                reply_to_message_id=message.id # This error message replies to *your* message
-            )
+            else:
+                # If QuotLyBot doesn't respond, raise an error
+                raise Exception("QuotLyBot didn't respond. Make sure you've started @QuotLyBot first.")
+        
+        except Exception as e:
+            # Handle error: restore original message and log
+            try:
+                # Restore the original message by sending it back to the same chat
+                await client.send_message(message.chat.id, original_text)
+                    
+                await self.log_error(f"Auto-quote failed, original message restored: {str(e)}", message)
+                
+                # Remove from cache since we restored it
+                if msg_id in self.original_messages:
+                    del self.original_messages[msg_id]
+                    
+            except Exception as restore_error:
+                # If restoration also fails, log both errors
+                await self.log_error(f"Auto-quote failed and couldn't restore message. Original error: {str(e)}, Restore error: {str(restore_error)}", message)
     
     async def wait_for_quotly_response(self, client: Client, timeout: int = 15) -> Optional[Message]:
         """Wait for QuotLyBot to respond with any message."""
