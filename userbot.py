@@ -298,6 +298,37 @@ class TelegramUserbot:
             await self.log_error(f"Error waiting for QuotLyBot response: {str(e)}")
             return None
     
+    async def police_command(self, client: Client, message: Message):
+        """
+        Pyrogram command to display a police siren animation.
+        Translated from Telethon.
+        """
+        if message.forward_from:
+            return
+
+        animation_interval = 0.3
+        animation_chars = [
+            "🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵",
+            "🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴",
+            "🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵",
+            "🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴",
+            "🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵",
+            "🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴",
+            "🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵",
+            "🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴",
+            "🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵",
+            "🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴",
+            "🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵",
+            "**Police Service Here**", # Removed the Markdown link
+        ]
+
+        await message.edit_text("Police") # Initial message to show immediately
+
+        for i in range(len(animation_chars)):
+            await asyncio.sleep(animation_interval)
+            await message.edit_text(animation_chars[i])
+
+
     async def start(self):
         """Start the userbot."""
         if not await self.setup_client():
@@ -314,14 +345,19 @@ class TelegramUserbot:
             async def auto_quote_handler(client, message):
                 if self.auto_quote_enabled:
                     await self.auto_quote_message(client, message)
-            
+
+            # Register the new police command
+            @self.client.on_message(filters.me & filters.command("police", prefixes="."))
+            async def police_cmd_handler(client, message):
+                await self.police_command(client, message)
+
             # Start client
             await self.client.start()
             print("✅ Userbot started successfully!")
             
             # Send startup message to Saved Messages
             try:
-                await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color")
+                await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color\n• `.police` - Display police siren animation")
             except:
                 pass
             
