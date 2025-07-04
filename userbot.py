@@ -18,6 +18,7 @@ class TelegramUserbot:
         self.client = None
         self.auto_quote_enabled = False
         self.current_color = "default"
+        self.quotly_bot_color = None  # Track what color QuotLyBot is currently set to
         self.pending_color_change = None
         self.original_messages = {}  # Store original messages for error recovery
         self.load_state()
@@ -182,12 +183,19 @@ class TelegramUserbot:
             
             # No need to send /start to QuotLyBot
             
-            # Send color command if not default
-            if self.current_color != "default":
-                await client.send_message("@QuotLyBot", f"/qcolor {self.current_color}")
-                await asyncio.sleep(1)
+            # Only send color command if color changed
+            if self.current_color != self.quotly_bot_color:
+                if self.current_color != "default":
+                    await client.send_message("@QuotLyBot", f"/qcolor {self.current_color}")
+                    self.quotly_bot_color = self.current_color
+                    await asyncio.sleep(0.5)  # Brief pause
+                else:
+                    # Reset to default if needed
+                    await client.send_message("@QuotLyBot", "/qcolor default")
+                    self.quotly_bot_color = "default"
+                    await asyncio.sleep(0.5)
             
-            # Send text to quote
+            # Send just the text to quote
             quote_request = await client.send_message("@QuotLyBot", original_text)
             
             # Wait for response
