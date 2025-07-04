@@ -278,30 +278,51 @@ class TelegramUserbot:
             print("Failed to setup client")
             return
         
-        # Register handlers
-        @self.client.on_message(filters.me & filters.regex(r'^\.q\s'))
-        async def quote_command_handler(client, message):
-            await self.handle_quote_command(client, message)
-        
-        @self.client.on_message(filters.me & filters.text & ~filters.regex(r'^\.'))
-        async def auto_quote_handler(client, message):
-            if self.auto_quote_enabled:
-                await self.auto_quote_message(client, message)
-        
-        # Start client
-        await self.client.start()
-        print("✅ Userbot started successfully!")
-        
-        # Send startup message to Saved Messages
         try:
-            await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color")
-        except:
-            pass
-        
-        # Keep running
-        self.is_connected = True
-        print("🤖 Userbot is now monitoring messages...")
-        
-        # Keep the client running
-        while True:
-            await asyncio.sleep(1)
+            # Register handlers
+            @self.client.on_message(filters.me & filters.regex(r'^\.q\s'))
+            async def quote_command_handler(client, message):
+                await self.handle_quote_command(client, message)
+            
+            @self.client.on_message(filters.me & filters.text & ~filters.regex(r'^\.'))
+            async def auto_quote_handler(client, message):
+                if self.auto_quote_enabled:
+                    await self.auto_quote_message(client, message)
+            
+            # Start client
+            await self.client.start()
+            print("✅ Userbot started successfully!")
+            
+            # Send startup message to Saved Messages
+            try:
+                await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color")
+            except:
+                pass
+            
+            # Keep running
+            self.is_connected = True
+            print("🤖 Userbot is now monitoring messages...")
+            
+            # Keep the client running
+            while True:
+                await asyncio.sleep(1)
+                
+        except Exception as e:
+            error_msg = str(e)
+            if "AUTH_KEY_DUPLICATED" in error_msg:
+                print("⚠️ Session is being used elsewhere. Userbot will wait...")
+                # Wait and retry periodically
+                while True:
+                    await asyncio.sleep(60)  # Wait 1 minute
+                    try:
+                        await self.client.start()
+                        print("✅ Userbot reconnected successfully!")
+                        self.is_connected = True
+                        break
+                    except:
+                        continue
+            else:
+                print(f"❌ Userbot error: {error_msg}")
+                # Keep the web server running even if userbot fails
+                while True:
+                    await asyncio.sleep(10)
