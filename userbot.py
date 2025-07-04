@@ -11,6 +11,10 @@ from typing import Optional, Dict, Any
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from config import Config
+import google.generativeai as genai
+
+# Import the new ask_ai_command from the separate file
+from ask_command import ask_ai_command 
 
 class TelegramUserbot:
     def __init__(self):
@@ -22,6 +26,15 @@ class TelegramUserbot:
         self.pending_color_change = None
         self.original_messages = {}  # Store original messages for error recovery
         self.load_state()
+        
+        # Initialize Gemini AI model (Existing)
+        if self.config.GEMINI_API_KEY:
+            genai.configure(api_key=self.config.GEMINI_API_KEY)
+            self.gemini_model = genai.GenerativeModel('gemini-pro')
+            print("✅ Gemini AI model initialized successfully.")
+        else:
+            self.gemini_model = None
+            print("⚠️ GEMINI_API_KEY not found. Gemini AI features disabled.")
         
     def load_state(self):
         """Load userbot state from JSON file."""
@@ -319,7 +332,7 @@ class TelegramUserbot:
             "🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵",
             "🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴\n🔵🔵🔵⬜⬜⬜🔴🔴🔴",
             "🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵\n🔴🔴🔴⬜⬜⬜🔵🔵🔵",
-            "**Police Service Here**", # Removed the Markdown link
+            "**Police Service Here**",
         ]
 
         await message.edit_text("Police") # Initial message to show immediately
@@ -346,10 +359,16 @@ class TelegramUserbot:
                 if self.auto_quote_enabled:
                     await self.auto_quote_message(client, message)
 
-            # Register the new police command
+            # Register the police command
             @self.client.on_message(filters.me & filters.command("police", prefixes="."))
             async def police_cmd_handler(client, message):
                 await self.police_command(client, message)
+
+            # Register the new AI command (MODIFIED)
+            @self.client.on_message(filters.me & filters.command("ask", prefixes="."))
+            async def ask_ai_cmd_handler(client, message):
+                # Pass 'self' (the TelegramUserbot instance) to the external function
+                await ask_ai_command(self, client, message)
 
             # Start client
             await self.client.start()
@@ -357,7 +376,7 @@ class TelegramUserbot:
             
             # Send startup message to Saved Messages
             try:
-                await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color\n• `.police` - Display police siren animation")
+                await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color\n• `.police` - Display police siren animation\n• `.ask <question>` - Ask Envo AI a general question\n• `.ask g <text/reply>` - Fix grammar of text/replied message\n• `.ask t <lang> <text/reply>` - Translate text/replied message to a language")
             except:
                 pass
             
@@ -378,13 +397,13 @@ class TelegramUserbot:
                     await asyncio.sleep(60)  # Wait 1 minute
                     try:
                         await self.client.start()
-                        print("✅ Userbot reconnected successfully!")
+                        print("✅ Userbot reconnected successfully!\n")
                         self.is_connected = True
                         break
                     except:
                         continue
             else:
-                print(f"❌ Userbot error: {error_msg}")
+                print(f"❌ Userbot error: {error_msg}\n")
                 # Keep the web server running even if userbot fails
                 while True:
                     await asyncio.sleep(10)
