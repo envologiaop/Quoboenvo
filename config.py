@@ -1,32 +1,24 @@
-"""
-Configuration settings for the Telegram userbot.
-Handles environment variables and API credentials.
-"""
-
 import os
 from dotenv import load_dotenv
 
-# Load environment variables from .env file if present
 load_dotenv()
 
 class Config:
-    """Configuration class for userbot settings."""
-    
     def __init__(self):
-        # Pyrogram session string (contains API credentials)
         self.SESSION_STRING = os.getenv('SESSION_STRING', '')
+        self.GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '') # <--- ADD THIS LINE
         
-        # Validate required environment variables
         self._validate_config()
     
     def _validate_config(self):
-        """Validate that all required configuration is present."""
         if not self.SESSION_STRING:
             raise ValueError("SESSION_STRING environment variable is required")
-    
+        # You might want to add validation for GEMINI_API_KEY as well
+        # if not self.GEMINI_API_KEY:
+        #     raise ValueError("GEMINI_API_KEY environment variable is required for AI features")
+
     @property
     def is_valid(self) -> bool:
-        """Check if configuration is valid."""
         try:
             self._validate_config()
             return True
