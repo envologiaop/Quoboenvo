@@ -53,7 +53,7 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
             await client.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=original_message_id,
-                text=f"✍️ **Corrected:** {corrected_text}" # Emoji for writing/correction
+                text=f"{corrected_text}" # Emoji for writing/correction
             )
 
         # --- Translation (Modified) ---
@@ -85,7 +85,7 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
             await client.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=original_message_id,
-                text=f"🌍 **Translated ({target_lang}):** {translated_text}" # Emoji for translation
+                text=f"{translated_text}" # Emoji for translation
             )
 
         # --- General Question ---
