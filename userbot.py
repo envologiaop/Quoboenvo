@@ -114,17 +114,26 @@ class TelegramUserbot:
             
             # Handle color and text commands
             if len(command_parts) == 2:
-                # .q colorname text
+                # .q colorname text (Quote with specific color and text)
                 color_name = command_parts[0]
                 text_to_quote = command_parts[1]
                 await self.quote_with_color(client, message, color_name, text_to_quote)
             
             elif len(command_parts) == 1:
-                # .q colorname (set color for future quotes)
+                # .q colorname (Set default color for future quotes, update QuotLyBot immediately)
                 color_name = command_parts[0]
                 self.current_color = color_name
                 self.save_state()
                 await client.send_message("me", f"🎨 **Color set to: {color_name}**\nFuture quotes will use this color.")
+                
+                # IMMEDIATELY send the color command to QuotLyBot when the user sets a default color
+                color_msg_to_quotly = await client.send_message("@QuotLyBot", f"/qcolor {color_name}")
+                self.quotly_bot_color = color_name # Update our internal tracking of QuotLyBot's color
+                await asyncio.sleep(1) # Give QuotLyBot a moment to process the command
+                try:
+                    await color_msg_to_quotly.delete() # Clean up this message from QuotLyBot chat
+                except Exception as e:
+                    print(f"Warning: Could not delete color command message to QuotLyBot: {e}")
         
         except Exception as e:
             await self.log_error(f"Error in handle_quote_command: {str(e)}", message)
@@ -138,14 +147,15 @@ class TelegramUserbot:
             # Send color command to QuotLyBot
             color_msg = await client.send_message("@QuotLyBot", f"/qcolor {color_name}")
             
-            # Wait for color confirmation (short delay)
-            await asyncio.sleep(2)
+            # Wait briefly for color confirmation (longer sleep for reliability)
+            await asyncio.sleep(1) # Increased from 0.5s for reliability
             
             # Send the text to be quoted
             quote_request = await client.send_message("@QuotLyBot", text)
             
             # Wait for QuotLyBot response
-            response = await self.wait_for_quotly_response(client)
+            # Pass the ID of the last message sent to QuotLyBot to ensure we get a new response
+            response = await self.wait_for_quotly_response(client, quote_request.id)
             
             if response:
                 # Send the QuotLyBot response content as your own message
@@ -173,7 +183,7 @@ class TelegramUserbot:
                     await response.delete()
             
             else:
-                raise Exception("No response received from QuotLyBot")
+                raise Exception("No response received from QuotLyBot for the quote request.")
         
         except Exception as e:
             await self.log_error(f"Error in quote_with_color: {str(e)}", original_message)
@@ -207,22 +217,15 @@ class TelegramUserbot:
             if message.reply_to_message:
                 target_reply_id = message.reply_to_message.id
             
-            # 3. Manage QuotLyBot color setting to ensure consistency
-            if self.current_color != self.quotly_bot_color:
-                if self.current_color != "default":
-                    await client.send_message("@QuotLyBot", f"/qcolor {self.current_color}")
-                    self.quotly_bot_color = self.current_color
-                    await asyncio.sleep(0.5)  # Brief pause
-                else:
-                    await client.send_message("@QuotLyBot", "/qcolor default")
-                    self.quotly_bot_color = "default"
-                    await asyncio.sleep(0.5)
+            # 3. NO LONGER sending /qcolor repeatedly here.
+            #    We rely on QuotLyBot maintaining the last set color from the .q color command.
             
             # 4. Send the original message's text to QuotLyBot for quote generation
             quote_request = await client.send_message("@QuotLyBot", original_text)
             
             # 5. Wait for response from @QuotLyBot
-            response = await self.wait_for_quotly_response(client)
+            # Pass the ID of the last message sent to QuotLyBot to ensure we get a new response
+            response = await self.wait_for_quotly_response(client, quote_request.id)
             
             if response:
                 # 6. Send the QuotLyBot response content.
@@ -259,7 +262,8 @@ class TelegramUserbot:
                 # 7. Clean up QuotLyBot chat messages
                 try:
                     await quote_request.delete()
-                    await response.delete()
+                    if response:
+                        await response.delete()
                 except Exception as e:
                     print(f"Warning: Could not clean up QuotLyBot chat messages: {e}")
                     pass # Continue even if cleanup fails
@@ -270,7 +274,7 @@ class TelegramUserbot:
             
             else:
                 # If QuotLyBot doesn't respond, raise an error
-                raise Exception("QuotLyBot didn't respond. Make sure you've started @QuotLyBot first.")
+                raise Exception("QuotLyBot didn't respond to the quote request. Make sure you've started @QuotLyBot first.")
         
         except Exception as e:
             # Handle error: restore original message and log
@@ -288,29 +292,33 @@ class TelegramUserbot:
                 # If restoration also fails, log both errors
                 await self.log_error(f"Auto-quote failed and couldn't restore message. Original error: {str(e)}, Restore error: {str(restore_error)}", message)
     
-    async def wait_for_quotly_response(self, client: Client, timeout: int = 15) -> Optional[Message]:
-        """Wait for QuotLyBot to respond with any message."""
-        try:
-            # Wait for a few seconds before checking for response
-            await asyncio.sleep(3)
+    async def wait_for_quotly_response(self, client: Client, last_sent_message_id: int, timeout: int = 15) -> Optional[Message]:
+        """
+        Wait for QuotLyBot to respond with an actual quote message (photo/text/sticker)
+        that is newer than `last_sent_message_id`.
+        """
+        start_time = asyncio.get_event_loop().time()
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            await asyncio.sleep(1) # Check every second for a new message
             
-            # Get recent messages from QuotLyBot
-            messages = []
-            async for message in client.get_chat_history("@QuotLyBot", limit=5):
-                messages.append(message)
-            
-            # Look for the most recent message from QuotLyBot
-            for message in messages:
+            async for message in client.get_chat_history("@QuotLyBot", limit=5): # Check a few recent messages
+                # Ensure it's from QuotLyBot and is a new message (newer ID)
                 if (message.from_user and 
                     hasattr(message.from_user, 'username') and
-                    message.from_user.username == "QuotLyBot"):
-                    return message
+                    message.from_user.username == "QuotLyBot" and
+                    message.id > last_sent_message_id): 
+                    
+                    # Heuristic to find an actual quote message, not a command confirmation
+                    if message.photo or message.sticker:
+                        return message # Photos and stickers are almost certainly quotes
+                    
+                    if message.text:
+                        # QuotLyBot's color confirmation starts with "Color set to"
+                        # Return text if it's not a color confirmation
+                        if not message.text.lower().startswith("color set to"):
+                            return message 
             
-            return None
-        
-        except Exception as e:
-            await self.log_error(f"Error waiting for QuotLyBot response: {str(e)}")
-            return None
+        return None # No suitable response found within timeout
     
     async def police_command(self, client: Client, message: Message):
         """
@@ -377,7 +385,7 @@ class TelegramUserbot:
             
             # Send startup message to Saved Messages
             try:
-                await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color\n• `.police` - Display police siren animation\n• `.ask <question>` - Ask Envo AI a general question\n• `.ask g <text/reply>` - Fix grammar of text/replied message\n• `.ask t <lang> <text/reply>` - Translate text/replied message to a language")
+                await self.client.send_message("me", "🤖 **Userbot Started**\n\nCommands:\n• `.q start` - Enable auto-quote\n• `.q stop` - Disable auto-quote\n• `.q color text` - Quote with color\n• `.q color` - Set default color\n• `.police` - Display police siren animation\n• `.ask <question>` - Ask Envo AI a general question\n• `.ask web <text/reply>` - Search the web with DuckDuckGo\n• `.ask g <text/reply>` - Fix grammar of text/replied message\n• `.ask t <lang> <text/reply>` - Translate text/replied message to a language")
             except Exception as e:
                 # Log any errors during startup message sending
                 print(f"Error sending startup message: {e}")
