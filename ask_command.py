@@ -3,7 +3,21 @@ import traceback
 import google.generativeai as genai
 from pyrogram import Client, filters
 from pyrogram.types import Message
-# Removed 'requests' and 'json' imports as they are no longer needed without the web search
+
+# Define the persona prompt here, so it can be reused across functions
+PERSONA_PROMPT = """You are responding as if you are the actual user whose account this is. You should:
+
+- Write in a natural, human way without any AI-like formalities
+- Use casual, conversational language like a real person would
+- Be helpful but sound like you're just knowledgeable, not like an AI
+- Don't mention being an AI, assistant, or any technical terms about yourself
+- Respond as if you personally know the information and are sharing it
+- Use the same tone and style a human would use in Telegram chats
+- Be concise unless specifically asked for detailed explanations
+- Sound natural and authentic in all responses
+
+Remember: You ARE this person, not an AI helping them. Respond accordingly."""
+
 
 async def ask_ai_command(userbot_instance, client: Client, message: Message):
     """
@@ -23,10 +37,6 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
     try:
         await message.edit_text("💭") # Emoji for thinking
 
-        # --- Web Search with DuckDuckGo functionality has been removed ---
-        # The entire 'if sub_cmd == "web":' block is no longer here.
-
-
         # --- Grammar Correction (Modified) ---
         if sub_cmd == "g":
             if message.reply_to_message and message.reply_to_message.text:
@@ -41,8 +51,8 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 )
                 return
 
-            # Enhanced prompt for grammar correction
-            prompt = f"Correct the grammar and spelling of the following text. Provide only the corrected text, without any introductory or concluding remarks.\n\nText to correct:\n\"{text_to_correct}\""
+            # Persona applied to grammar prompt
+            prompt = f"{PERSONA_PROMPT}\n\nCorrect the grammar and spelling of the following text. Provide only the corrected text, without any introductory or concluding remarks.\n\nText to correct:\n\"{text_to_correct}\""
             
             response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt)
             corrected_text = response.text if response.candidates else "❌ Could not correct grammar."
@@ -74,8 +84,8 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 )
                 return
 
-            # Enhanced prompt for translation
-            prompt = f"Translate the following text into {target_lang}. Provide only the translated text, without any introductory or concluding remarks.\n\nText to translate:\n\"{text_to_translate}\""
+            # Persona applied to translation prompt
+            prompt = f"{PERSONA_PROMPT}\n\nTranslate the following text into {target_lang}. Provide only the translated text, without any introductory or concluding remarks.\n\nText to translate:\n\"{text_to_translate}\""
             
             response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt)
             translated_text = response.text if response.candidates else "❌ Could not translate."
@@ -103,9 +113,10 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 )
                 return
 
-            # Send general question to Gemini without tools
-            # Prompt is now just the user's question, allowing the AI to respond naturally
-            response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, user_question) 
+            # Persona applied to general question
+            full_prompt = f"{PERSONA_PROMPT}\n\nHere's the question I want you to answer:\n{user_question}"
+            
+            response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, full_prompt) 
             ai_response = response.text if response.candidates else "❌ No response from model."
             
             # Clean up AI-specific phrases (already present, ensuring robustness)
@@ -137,7 +148,7 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
         await userbot_instance.log_error(f"Error in ask_ai_command: {str(e)}\n\nTraceback:\n{error_trace}", message)
 
 
-# NEW FUNCTION: For analyzing the word guessing game
+# Function for analyzing the word guessing game
 async def analyse_word_command(userbot_instance, client: Client, message: Message):
     """
     Analyzes WordSeekBot game state to guess the secret word.
@@ -163,8 +174,9 @@ async def analyse_word_command(userbot_instance, client: Client, message: Messag
     original_message_id = message.id # Keep original message ID for editing
     await message.edit_text("🧠 Analyzing game state... Please wait.") # Emoji for thinking/analysis
 
-    # Enhanced prompt for word analysis to get a "smarter" and cleaner response
+    # Persona applied to word analysis prompt
     prompt = (
+        f"{PERSONA_PROMPT}\n\n" # Apply persona here
         "You are an expert at solving 5-letter word guessing games, similar to Wordle. The secret word is exactly 5 letters long.\n"
         "Here are the rules for interpreting the feedback squares:\n"
         "- 🟩 (Green square) means the letter is correct and in the correct position.\n"
