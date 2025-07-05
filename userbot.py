@@ -14,7 +14,7 @@ from config import Config
 import google.generativeai as genai
 
 # Import the new ask_ai_command from the separate file
-from ask_command import ask_ai_command 
+from ask_command import ask_ai_command , analyse_word_command
 
 class TelegramUserbot:
     def __init__(self):
