@@ -146,13 +146,21 @@ async def analyse_word_command(userbot_instance, client: Client, message: Messag
         await message.edit_text("❌ AI model not configured for analysis. Please set `GEMINI_API_KEY`.")
         return
 
-    text_after_command = message.text.split(' ', 1)
-    if len(text_after_command) < 2 or not text_after_command[1].strip():
-        await message.edit_text("🤔 Please provide the game state. Usage: `.analyse <game state lines>`\n\nExample:\n`.analyse 🟥🟥🟥🟥🟥 THREE\n🟨🟥🟥🟨🟥 AROMA`")
+    game_state_lines = None
+    # Check if the command is a reply to a message
+    if message.reply_to_message and message.reply_to_message.text:
+        game_state_lines = message.reply_to_message.text
+    else:
+        # Otherwise, try to extract from the command itself
+        text_after_command = message.text.split(' ', 1)
+        if len(text_after_command) > 1 and text_after_command[1].strip():
+            game_state_lines = text_after_command[1].strip()
+
+    if not game_state_lines:
+        await message.edit_text("🤔 Please provide the game state. Usage: `.analyse <game state lines>` or reply to a message with `.analyse`\n\nExample:\n`.analyse 🟥🟥🟥🟥🟥 THREE\n🟨🟥🟥🟨🟥 AROMA`")
         return
 
-    game_state_lines = text_after_command[1].strip()
-
+    original_message_id = message.id # Keep original message ID for editing
     await message.edit_text("🧠 Analyzing game state... Please wait.") # Emoji for thinking/analysis
 
     # Enhanced prompt for word analysis to get a "smarter" and cleaner response
@@ -171,11 +179,16 @@ async def analyse_word_command(userbot_instance, client: Client, message: Messag
     )
 
     try:
-        response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt)
+        # Added a timeout for the AI generation
+        response = await asyncio.wait_for(
+            asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt),
+            timeout=30 # 30-second timeout for AI response
+        )
         
-        predicted_word = response.text.strip() if response.candidates else "❌ Could not determine word."
+        predicted_word = response.text.strip() if response.candidates else ""
 
         # Robust post-processing to ensure ONLY the 5-letter word is extracted
+        # Remove any conversational filler or formatting
         predicted_word = predicted_word.replace("AI output:", "").replace("Envo response:", "").strip()
         predicted_word = predicted_word.split('\n')[0].strip() # Take only the first line
         predicted_word = ''.join(filter(str.isalpha, predicted_word)).upper() # Filter non-alphabetic chars and convert to uppercase
@@ -191,10 +204,17 @@ async def analyse_word_command(userbot_instance, client: Client, message: Messag
              await client.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=original_message_id,
-                text=f"❌ Analysis complete, but I couldn't clearly determine a 5-letter word. Received: `{predicted_word}`\n\n"
-                     "Please ensure you provide the exact emoji/word format for the game state."
+                text=f"❌ Analysis complete, but I couldn't clearly determine a 5-letter word. Result: `{predicted_word}`\n\n"
+                     "Please ensure you provide the exact emoji/word format for the game state or that the AI has enough information."
             )
 
+    except asyncio.TimeoutError:
+        await client.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=original_message_id,
+            text="⏳ Analysis timed out. The AI took too long to respond. Please try again or provide more precise hints."
+        )
+        await userbot_instance.log_error(f"Analysis timed out for message: {message.text}", message)
     except Exception as e:
         error_trace = traceback.format_exc()
         print(f"Error in analyse_word_command: {e}\n{error_trace}")
