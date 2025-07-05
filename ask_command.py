@@ -102,7 +102,8 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 return
 
             # Send general question to Gemini without tools
-            response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt) # Changed 'user_question' to 'prompt' here
+            # FIXED: Changed 'prompt' back to 'user_question' here
+            response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, user_question) 
             ai_response = response.text if response.candidates else "❌ No response from model."
             
             # Clean up AI-specific phrases
