@@ -41,19 +41,20 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 )
                 return
 
-            prompt = f"Correct the grammar and spelling of the following text:\n\n\"{text_to_correct}\"\n\nProvide only the corrected text."
+            # Enhanced prompt for grammar correction
+            prompt = f"Correct the grammar and spelling of the following text. Provide only the corrected text, without any introductory or concluding remarks.\n\nText to correct:\n\"{text_to_correct}\""
             
             response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt)
             corrected_text = response.text if response.candidates else "❌ Could not correct grammar."
             
-            # Clean up AI-specific phrases
+            # Clean up AI-specific phrases (already present, ensuring robustness)
             corrected_text = corrected_text.replace("AI output:", "").replace("Envo response:", "").strip()
+            corrected_text = corrected_text.replace("Corrected text:", "").strip() # Added specific cleaning for this prompt
 
-            # MODIFIED: Removed the original text from the response for grammar
             await client.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=original_message_id,
-                text=f"{corrected_text}" # Emoji for writing/correction
+                text=f"✍️ **Corrected:** {corrected_text}" # Emoji for writing/correction
             )
 
         # --- Translation (Modified) ---
@@ -73,23 +74,24 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 )
                 return
 
-            prompt = f"Translate the following text into {target_lang}:\n\n\"{text_to_translate}\"\n\nProvide only the translated text."
+            # Enhanced prompt for translation
+            prompt = f"Translate the following text into {target_lang}. Provide only the translated text, without any introductory or concluding remarks.\n\nText to translate:\n\"{text_to_translate}\""
             
             response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt)
             translated_text = response.text if response.candidates else "❌ Could not translate."
             
-            # Clean up AI-specific phrases
+            # Clean up AI-specific phrases (already present, ensuring robustness)
             translated_text = translated_text.replace("AI output:", "").replace("Envo response:", "").strip()
+            translated_text = translated_text.replace("Translated text:", "").strip() # Added specific cleaning for this prompt
 
-            # Original text was already removed from translation response in a previous iteration.
             await client.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=original_message_id,
-                text=f"{translated_text}" # Emoji for translation
+                text=f"🌍 **Translated ({target_lang}):** {translated_text}" # Emoji for translation
             )
 
         # --- General Question ---
-        elif len(command_parts) > 1: # No longer checking for sub_cmd != "web" as "web" is removed
+        elif len(command_parts) > 1:
             user_question = message.text[len(command_parts[0]) + 1:].strip() # Get everything after .ask
             
             # Check if it's a general question or just a sub_cmd without content
@@ -102,11 +104,11 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 return
 
             # Send general question to Gemini without tools
-            # FIXED: Changed 'prompt' back to 'user_question' here
+            # Prompt is now just the user's question, allowing the AI to respond naturally
             response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, user_question) 
             ai_response = response.text if response.candidates else "❌ No response from model."
             
-            # Clean up AI-specific phrases
+            # Clean up AI-specific phrases (already present, ensuring robustness)
             ai_response = ai_response.replace("AI output:", "").replace("Envo response:", "").strip()
 
             await client.edit_message_text(
@@ -133,3 +135,72 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
             text=f"❌ An error occurred with the command: {e}"
         )
         await userbot_instance.log_error(f"Error in ask_ai_command: {str(e)}\n\nTraceback:\n{error_trace}", message)
+
+
+# NEW FUNCTION: For analyzing the word guessing game
+async def analyse_word_command(userbot_instance, client: Client, message: Message):
+    """
+    Analyzes WordSeekBot game state to guess the secret word.
+    """
+    if not userbot_instance.gemini_model:
+        await message.edit_text("❌ AI model not configured for analysis. Please set `GEMINI_API_KEY`.")
+        return
+
+    text_after_command = message.text.split(' ', 1)
+    if len(text_after_command) < 2 or not text_after_command[1].strip():
+        await message.edit_text("🤔 Please provide the game state. Usage: `.analyse <game state lines>`\n\nExample:\n`.analyse 🟥🟥🟥🟥🟥 THREE\n🟨🟥🟥🟨🟥 AROMA`")
+        return
+
+    game_state_lines = text_after_command[1].strip()
+
+    await message.edit_text("🧠 Analyzing game state... Please wait.") # Emoji for thinking/analysis
+
+    # Enhanced prompt for word analysis to get a "smarter" and cleaner response
+    prompt = (
+        "You are an expert at solving 5-letter word guessing games, similar to Wordle. The secret word is exactly 5 letters long.\n"
+        "Here are the rules for interpreting the feedback squares:\n"
+        "- 🟩 (Green square) means the letter is correct and in the correct position.\n"
+        "- 🟨 (Yellow square) means the letter is correct but in the wrong position (it exists in the word, just not here).\n"
+        "- 🟥 (Red square) means the letter is NOT in the word at all.\n\n"
+        "Analyze the following game state, which includes previous guesses and their feedback. "
+        "Based on ALL the information provided, determine the MOST LIKELY 5-letter secret word. "
+        "Your response MUST be ONLY the 5-letter word itself, with no other text, punctuation, or explanation whatsoever. "
+        "Do NOT include any introductory phrases like 'The word is' or 'I think the word is'. Just the word.\n\n"
+        "Game state:\n"
+        f"{game_state_lines}"
+    )
+
+    try:
+        response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt)
+        
+        predicted_word = response.text.strip() if response.candidates else "❌ Could not determine word."
+
+        # Robust post-processing to ensure ONLY the 5-letter word is extracted
+        predicted_word = predicted_word.replace("AI output:", "").replace("Envo response:", "").strip()
+        predicted_word = predicted_word.split('\n')[0].strip() # Take only the first line
+        predicted_word = ''.join(filter(str.isalpha, predicted_word)).upper() # Filter non-alphabetic chars and convert to uppercase
+
+        if len(predicted_word) == 5:
+            # Changed the output to be more direct, as if from "you"
+            await client.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=original_message_id,
+                text=f"**{predicted_word}**" # Just the word, bolded
+            )
+        else:
+             await client.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=original_message_id,
+                text=f"❌ Analysis complete, but I couldn't clearly determine a 5-letter word. Received: `{predicted_word}`\n\n"
+                     "Please ensure you provide the exact emoji/word format for the game state."
+            )
+
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        print(f"Error in analyse_word_command: {e}\n{error_trace}")
+        await client.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=original_message_id,
+            text=f"❌ An error occurred during analysis: {e}"
+        )
+        await userbot_instance.log_error(f"Error in analyse_word_command: {str(e)}\n\nTraceback:\n{error_trace}", message)
