@@ -378,6 +378,9 @@ class TelegramUserbot:
             async def ask_ai_cmd_handler(client, message):
                 # Pass 'self' (the TelegramUserbot instance) to the external function
                 await ask_ai_command(self, client, message)
+            @self.client.on_message(filters.me & filters.regex(r"^\.analyse")) # NEW: Handler for .analyse command
+            async def analyse_command_handler(_, message: Message):
+                await analyse_word_command(self, self.client, message)
 
             # Start client
             await self.client.start()
