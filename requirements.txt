@@ -4,3 +4,4 @@ python-dotenv==1.1.1
 gunicorn==21.2.0
 TgCrypto
 google-generativeai==0.7.1
+requests==2.32.3
