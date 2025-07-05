@@ -3,48 +3,16 @@ import traceback
 import google.generativeai as genai
 from pyrogram import Client, filters
 from pyrogram.types import Message
-
-# Import the new DuckDuckGo search tool
-# Make sure duckduckgo_search.py is in the same directory
-import duckduckgo_search as search_tool 
-
-# Define a custom tool for the Gemini model to perform web searches
-def ddg_search(query: str):
-    """
-    Performs a web search using DuckDuckGo Instant Answer API.
-    This tool does not require an API key.
-    Returns relevant snippets or instant answers.
-    """
-    print(f"DEBUG: Performing DuckDuckGo search for: {query}")
-    results = search_tool.search(queries=[query])
-    
-    # Format results for the model
-    formatted_results = []
-    if results:
-        for r in results:
-            formatted_results.append(
-                f"Title: {r.get('title', 'N/A')}\n"
-                f"Link: {r.get('link', 'N/A')}\n"
-                f"Snippet: {r.get('snippet', 'No snippet available.')}\n"
-            )
-        return "\n---\n".join(formatted_results)
-    return "No search results found."
-
+# Removed 'requests' and 'json' imports as they are no longer needed without the web search
 
 async def ask_ai_command(userbot_instance, client: Client, message: Message):
     """
     Handle the .ask command for AI interactions.
-    Supports general questions, grammar correction, translation, and web search.
+    Supports general questions, grammar correction, and translation.
     """
     if not userbot_instance.gemini_model:
         await message.edit_text("❌ Model not configured. Please set `GEMINI_API_KEY` in your environment variables.")
         return
-
-    # --- START OF TEMPORARY DIAGNOSTIC CODE ---
-    # Put these two lines right here, after the 'if not userbot_instance.gemini_model:' check
-    print(f"DEBUG: google.generativeai version: {genai.__version__}")
-    print(f"DEBUG: Type of userbot_instance.gemini_model: {type(userbot_instance.gemini_model)}")
-    # --- END OF TEMPORARY DIAGNOSTIC CODE ---
 
     command_parts = message.text.split(' ', 2)
     cmd = command_parts[0].lower()
@@ -55,58 +23,12 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
     try:
         await message.edit_text("💭") # Emoji for thinking
 
-        # --- Web Search with DuckDuckGo ---
-        if sub_cmd == "web" and len(command_parts) > 2:
-            user_question = command_parts[2]
-            await message.edit_text(f"🔍 Searching: {user_question}") # Emoji for searching
-            
-            # Configure the Gemini model to use the ddg_search tool
-            model_with_tool = userbot_instance.gemini_model.with_tools(ddg_search)
-            
-            # Create a chat session with the model
-            chat = model_with_tool.start_chat(enable_automatic_function_calling=True)
-            
-            # Send the user's query
-            try:
-                response = await asyncio.to_thread(chat.send_message, user_question)
-                
-                response_text = ""
-                if response.candidates and response.candidates[0].content.parts:
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'text'):
-                            response_text += part.text
-                
-                # Clean up AI-specific phrases
-                response_text = response_text.replace("AI output:", "").replace("Envo response:", "").strip()
-                # You can add more replacements here if you notice other unwanted phrases
-
-                if response_text:
-                    await client.edit_message_text(
-                        chat_id=message.chat.id,
-                        message_id=original_message_id,
-                        text=response_text
-                    )
-                else:
-                    await client.edit_message_text(
-                        chat_id=message.chat.id,
-                        message_id=original_message_id,
-                        text="❌ No direct response after search."
-                    )
-
-            except Exception as e:
-                # Catch tool_code.tool_error for tool execution failures
-                if "tool_code.tool_error" in str(e):
-                    await client.edit_message_text(
-                        chat_id=message.chat.id,
-                        message_id=original_message_id,
-                        text=f"❌ Search tool error: {e}\n\nThis might happen if the model tried to use the search tool in an unexpected way."
-                    )
-                else:
-                    raise # Re-raise other exceptions
+        # --- Web Search with DuckDuckGo functionality has been removed ---
+        # The entire 'if sub_cmd == "web":' block is no longer here.
 
 
-        # --- Grammar Correction ---
-        elif sub_cmd == "g":
+        # --- Grammar Correction (Modified) ---
+        if sub_cmd == "g":
             if message.reply_to_message and message.reply_to_message.text:
                 text_to_correct = message.reply_to_message.text
             elif len(command_parts) > 2:
@@ -127,13 +49,14 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
             # Clean up AI-specific phrases
             corrected_text = corrected_text.replace("AI output:", "").replace("Envo response:", "").strip()
 
+            # MODIFIED: Removed the original text from the response for grammar
             await client.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=original_message_id,
-                text=f"✍️ **Original:** {text_to_correct}\n**Corrected:** {corrected_text}" # Emoji for writing/correction
+                text=f"✍️ **Corrected:** {corrected_text}" # Emoji for writing/correction
             )
 
-        # --- Translation ---
+        # --- Translation (Modified) ---
         elif sub_cmd == "t" and len(command_parts) > 2:
             target_lang = command_parts[2].split(' ', 1)[0].strip()
             text_to_translate_parts = command_parts[2].split(' ', 1)
@@ -158,14 +81,15 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
             # Clean up AI-specific phrases
             translated_text = translated_text.replace("AI output:", "").replace("Envo response:", "").strip()
 
+            # Original text was already removed from translation response in a previous iteration.
             await client.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=original_message_id,
-                text=f"🌍 **Original:** {text_to_translate}\n**Translated ({target_lang}):** {translated_text}" # Emoji for translation
+                text=f"🌍 **Translated ({target_lang}):** {translated_text}" # Emoji for translation
             )
 
         # --- General Question ---
-        elif len(command_parts) > 1 and sub_cmd != "web": # Ensure it's not a web search with just .ask web
+        elif len(command_parts) > 1: # No longer checking for sub_cmd != "web" as "web" is removed
             user_question = message.text[len(command_parts[0]) + 1:].strip() # Get everything after .ask
             
             # Check if it's a general question or just a sub_cmd without content
@@ -173,12 +97,12 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 await client.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=original_message_id,
-                    text="🤔 Please provide a question. Usage: `.ask <your question>` or `.ask web <your search query>`"
+                    text="🤔 Please provide a question. Usage: `.ask <your question>`"
                 )
                 return
 
             # Send general question to Gemini without tools
-            response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, user_question)
+            response = await asyncio.to_thread(userbot_instance.gemini_model.generate_content, prompt) # Changed 'user_question' to 'prompt' here
             ai_response = response.text if response.candidates else "❌ No response from model."
             
             # Clean up AI-specific phrases
@@ -195,7 +119,6 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
                 message_id=original_message_id,
                 text="Command usage:\n"
                      "✨ General: `.ask <your question>`\n"
-                     "🔍 Web Search: `.ask web <your search query>`\n"
                      "✍️ Grammar: `.ask g <text/reply>`\n"
                      "🌍 Translate: `.ask t <lang> <text/reply>`"
             )
