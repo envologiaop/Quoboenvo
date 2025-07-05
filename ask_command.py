@@ -40,6 +40,12 @@ async def ask_ai_command(userbot_instance, client: Client, message: Message):
         await message.edit_text("❌ Model not configured. Please set `GEMINI_API_KEY` in your environment variables.")
         return
 
+    # --- START OF TEMPORARY DIAGNOSTIC CODE ---
+    # Put these two lines right here, after the 'if not userbot_instance.gemini_model:' check
+    print(f"DEBUG: google.generativeai version: {genai.__version__}")
+    print(f"DEBUG: Type of userbot_instance.gemini_model: {type(userbot_instance.gemini_model)}")
+    # --- END OF TEMPORARY DIAGNOSTIC CODE ---
+
     command_parts = message.text.split(' ', 2)
     cmd = command_parts[0].lower()
     sub_cmd = command_parts[1].lower() if len(command_parts) > 1 else None
